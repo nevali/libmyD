@@ -1,0 +1,84 @@
+/*
+ * Copyright 2012 Mo McRoberts.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+#ifdef HAVE_CONFIG_H
+# include "config.h"
+#endif
+
+#include "p_libmyD.h"
+
+/* Read a PEM-formatted WebID certificate and process the URIs within it */
+myd *
+myd_from_pem(const char *pem, size_t len, myd_policy *reserved)
+{
+	BIO *bmem;
+	myd *myd;
+
+	if(!(bmem = BIO_new(BIO_s_mem())))
+	{
+		return NULL;
+	}
+	if(BIO_write(bmem, pem, len) != (ssize_t) len)
+	{
+		BIO_free(bmem);
+		return NULL;
+	}
+	(void) BIO_seek(bmem, 0);
+	myd = myd_from_pem_bio(bmem, reserved);
+	BIO_free(bmem);
+	return myd;
+}
+
+myd *
+myd_from_pem_bio(BIO *bio, myd_policy *reserved)
+{
+	myd *myd;
+	GENERAL_NAMES *names;
+	GENERAL_NAME *name;
+	unsigned char *utf8;
+	size_t count, n;
+
+	(void) reserved;
+
+	if(!(myd = myd__new()))
+	{
+		return NULL;
+	}
+	if(!(myd->x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL)))
+	{
+		myd_free(myd);
+		return NULL;
+	}
+	myd->key = X509_get_pubkey(myd->x509);
+	/* Extract the subjectAltName entries and create URI structures for each */
+	names = X509_get_ext_d2i(myd->x509, NID_subject_alt_name, 0, 0);
+	if(names)
+	{
+		count = sk_GENERAL_NAME_num(names);
+		for(n = 0; n < count; n++)
+		{
+			name = sk_GENERAL_NAME_value(names, n);
+			if(name->type == GEN_URI)
+			{
+				ASN1_STRING_to_UTF8(&utf8, name->d.uniformResourceIdentifier);
+				myd__add_uri(myd, (const char *) utf8);
+			}
+		}
+			
+	}
+	myd__traverse_uris(myd, reserved);
+	return myd;
+}

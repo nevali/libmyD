@@ -1,0 +1,8 @@
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.exp
+*.dSYM
+/myd-verify
