@@ -19,11 +19,20 @@
 #endif
 
 #include <stdio.h>
+
+#ifdef HAVE_UNISTD_H
 #include <unistd.h>
+#endif
 
 #include <openssl/err.h>
 
 #include "myD/myD.h"
+
+#if !defined(isatty) && defined(_isatty)
+# define isatty(fd)                     _isatty(fd)
+#elif !defined(isatty)
+# define isatty(fd)                     0
+#endif
 
 static myd_policy policy;
 
