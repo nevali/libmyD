@@ -1,5 +1,5 @@
 LIBOUT = libmyD.a
-LIBOBJ = pem.o structure.o traverse.o
+LIBOBJ = pem.o structure.o traverse.o policy.o
 
 OUT = myd-verify
 OBJ = verify.o

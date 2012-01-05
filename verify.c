@@ -19,9 +19,13 @@
 #endif
 
 #include <stdio.h>
+#include <unistd.h>
+
 #include <openssl/err.h>
 
 #include "myD/myD.h"
+
+static myd_policy policy;
 
 int
 main(int argc, char **argv)
@@ -33,10 +37,22 @@ main(int argc, char **argv)
 	(void) argc;
 	(void) argv;
 
+	if(argc > 1)
+	{
+		fprintf(stderr, "Usage: %s < CERTIFICATE.pem\n", argv[0]);
+		return 1;
+	}
+	if(isatty(0))
+	{
+		fprintf(stderr, "%s: Warning: Reading from standard input\n", argv[0]);
+	}
 	bin = BIO_new(BIO_s_file());
 	setvbuf(stdin, NULL, _IONBF, 0);
 	BIO_set_fp(bin, stdin, BIO_NOCLOSE);
-	if(!(myd = myd_from_pem_bio(bin, NULL)))
+
+	policy.debug = 1;
+
+	if(!(myd = myd_from_pem_bio(bin, &policy)))
 	{
 		fprintf(stderr, "%s: failed to parse certificate from standard input\n", argv[0]);
 		ERR_print_errors_fp(stderr);

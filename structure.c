@@ -18,7 +18,7 @@
 # include "config.h"
 #endif
 
-#include "p_libmyd.h"
+#include "p_libmyD.h"
 
 /* Internal: allocate a new myD structure */
 myd *
@@ -53,7 +53,8 @@ myd__add_uri(myd *myd, const char *uri)
 		return NULL;
 	}
 	myd->uris = p;
-	p = &(myd->uris[myd->nuris]);
+	p = &(myd->uris[myd->nuris]);   
+	memset(p, 0, sizeof(myd_uri));
 	myd->nuris++;
 	p->uri = uri;
 	return p;

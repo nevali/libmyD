@@ -14,28 +14,13 @@
  *  limitations under the License.
  */
 
-#ifndef P_LIBMYD_H_
-# define P_LIBMYD_H_                    1
+#ifdef HAVE_CONFIG_H
+# include "config.h"
+#endif
 
-# include <stdio.h>
-# include <string.h>
+#include "p_libmyD.h"
 
-# include <openssl/bio.h>
-# include <openssl/buffer.h>
-# include <openssl/x509.h>
-# include <openssl/pem.h>
-# include <openssl/x509v3.h>
-# include <openssl/bn.h>
-# include <openssl/rsa.h>
-
-# include <redland.h>
-
-# include "myD/myD.h"
-
-extern myd_policy myd__default_policy;
-
-extern myd *myd__new(void);
-extern myd_uri *myd__add_uri(myd *myd, const char *uri);
-extern int myd__traverse_uris(myd *myd, const myd_policy *policy);
-
-#endif /*!P_LIBMYD_H_*/
+myd_policy myd__default_policy =
+{
+	/* debug */ 0
+};

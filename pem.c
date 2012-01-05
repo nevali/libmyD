@@ -22,7 +22,7 @@
 
 /* Read a PEM-formatted WebID certificate and process the URIs within it */
 myd *
-myd_from_pem(const char *pem, size_t len, myd_policy *reserved)
+myd_from_pem(const char *pem, size_t len, const myd_policy *policy)
 {
 	BIO *bmem;
 	myd *myd;
@@ -37,13 +37,13 @@ myd_from_pem(const char *pem, size_t len, myd_policy *reserved)
 		return NULL;
 	}
 	(void) BIO_seek(bmem, 0);
-	myd = myd_from_pem_bio(bmem, reserved);
+	myd = myd_from_pem_bio(bmem, policy);
 	BIO_free(bmem);
 	return myd;
 }
 
 myd *
-myd_from_pem_bio(BIO *bio, myd_policy *reserved)
+myd_from_pem_bio(BIO *bio, const myd_policy *policy)
 {
 	myd *myd;
 	GENERAL_NAMES *names;
@@ -51,7 +51,10 @@ myd_from_pem_bio(BIO *bio, myd_policy *reserved)
 	unsigned char *utf8;
 	size_t count, n;
 
-	(void) reserved;
+	if(!policy)
+	{
+		policy = &myd__default_policy;
+	}
 
 	if(!(myd = myd__new()))
 	{
@@ -59,6 +62,10 @@ myd_from_pem_bio(BIO *bio, myd_policy *reserved)
 	}
 	if(!(myd->x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL)))
 	{
+		if(policy->debug)
+		{
+			fprintf(stderr, "libmyD: failed to parse PEM-formatted X.509 certificate\n");
+		}
 		myd_free(myd);
 		return NULL;
 	}
@@ -77,8 +84,21 @@ myd_from_pem_bio(BIO *bio, myd_policy *reserved)
 				myd__add_uri(myd, (const char *) utf8);
 			}
 		}
-			
+		if(policy->debug)
+		{
+			if(!myd->nuris)
+			{
+				fprintf(stderr, "libmyD: none of the certificate's subjectAltName entries are URIs\n");
+			}
+		}
 	}
-	myd__traverse_uris(myd, reserved);
+	else
+	{
+		if(policy->debug)
+		{
+			fprintf(stderr, "libmyD: certificate does not contain any subjectAltName extension\n");
+		}
+	}
+	myd__traverse_uris(myd, policy);
 	return myd;
 }

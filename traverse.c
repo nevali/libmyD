@@ -20,8 +20,8 @@
 
 #include "p_libmyD.h"
 
-static EVP_PKEY *process_key(myd *myd, librdf_world *world, librdf_model *model, librdf_node *subject);
-static RSA *process_rsa_key(librdf_world *world, librdf_model *model, librdf_node *subject);
+static EVP_PKEY *process_key(myd *myd, librdf_world *world, librdf_model *model, librdf_node *subject, const myd_policy *policy);
+static RSA *process_rsa_key(librdf_world *world, librdf_model *model, librdf_node *subject, const myd_policy *policy);
 static int keys_match(EVP_PKEY *a, EVP_PKEY *b);
 static BIGNUM *bn_from_node(librdf_node *node);
 static int subject_isa(librdf_world *world, librdf_model *model, librdf_node *subject, const char *classuri);
@@ -32,7 +32,7 @@ static BIGNUM *bn_from_property(librdf_world *world, librdf_model *model, librdf
  */
 
 int
-myd__traverse_uris(myd *myd, myd_policy *reserved)
+myd__traverse_uris(myd *myd, const myd_policy *policy)
 {
 	static librdf_world *world = NULL;
 	static librdf_storage *storage = NULL;
@@ -44,19 +44,35 @@ myd__traverse_uris(myd *myd, myd_policy *reserved)
 	librdf_node *snode, *knode, *cert_key;
 	EVP_PKEY *pkey;
 
-	(void) reserved;
-	
 	if(!world)
 	{
-		world = librdf_new_world();
+		if(!(world = librdf_new_world()))
+		{
+			if(policy->debug)
+			{
+				fprintf(stderr, "libmyD: failed to create new Redland environment\n");
+			}
+			return -1;
+		}
 	}
 	if(!storage)
 	{
-		storage = librdf_new_storage(world, "memory", NULL, NULL);
+		if(!(storage = librdf_new_storage(world, "memory", NULL, NULL)))
+		{
+			if(policy->debug)
+			{
+				fprintf(stderr, "libmyD: failed to create new Redland memory store\n");
+			}
+			return -1;
+		}
 	}
 	parser = librdf_new_parser(world, "guess", NULL, NULL);
 	if(!parser)
 	{
+		if(policy->debug)
+		{
+			fprintf(stderr, "libmyD: failed to create Redland parser\n");
+		}
 		return -1;
 	}
 	cert_key = librdf_new_node_from_uri_string(world, (const unsigned char *) "http://www.w3.org/ns/auth/cert#key");
@@ -68,17 +84,25 @@ myd__traverse_uris(myd *myd, myd_policy *reserved)
 		/* Attempt to fetch and parse the resource at uri */
 		if(librdf_parser_parse_into_model(parser, uri, NULL, myd->uris[c].triples))
 		{
+			if(policy->debug)
+			{
+				fprintf(stderr, "libmyD: parsing of <%s> failed\n", myd->uris[c].uri);
+			}
 			continue;
 		}
 		myd->uris[c].parsed = 1;
 		/* Find all of the triples matching URI cert:key ? */
 		cert_query = librdf_new_statement_from_nodes(world, snode, librdf_new_node_from_node(cert_key), NULL);
 		stream = librdf_model_find_statements(myd->uris[c].triples, cert_query);
+		if(policy->debug && librdf_stream_end(stream))
+		{
+			fprintf(stderr, "libmyD: the subject <%s> does not have a cert:key property\n", myd->uris[c].uri);
+		}
 		while(!librdf_stream_end(stream))
 		{
 			st = librdf_stream_get_object(stream);
 			knode = librdf_statement_get_object(st);
-			if((pkey = process_key(myd, world, myd->uris[c].triples, knode)))
+			if((pkey = process_key(myd, world, myd->uris[c].triples, knode, policy)))
 			{
 				myd->uris[c].found_key = 1;
 				/* Compare the key with that presented in the certificate */
@@ -88,6 +112,13 @@ myd__traverse_uris(myd *myd, myd_policy *reserved)
 					myd->uris[c].matched = 1;
 					EVP_PKEY_free(pkey);
 					break;
+				}
+				else
+				{
+					if(policy->debug)
+					{
+						fprintf(stderr, "libmyD: the key associated with <%s> does not match the certificate\n", myd->uris[c].uri);
+					}
 				}
 				EVP_PKEY_free(pkey);
 			}
@@ -107,7 +138,7 @@ myd__traverse_uris(myd *myd, myd_policy *reserved)
 
 /* Process a subject to find a key matching that in myd->pkey */
 static EVP_PKEY *
-process_key(myd *myd, librdf_world *world, librdf_model *model, librdf_node *subject)
+process_key(myd *myd, librdf_world *world, librdf_model *model, librdf_node *subject, const myd_policy *policy)
 {
 	RSA *rsa;
 	EVP_PKEY *pkey;
@@ -115,7 +146,7 @@ process_key(myd *myd, librdf_world *world, librdf_model *model, librdf_node *sub
 	switch(myd->key->type)
 	{
 	case EVP_PKEY_RSA:
-		if((rsa = process_rsa_key(world, model, subject)))
+		if((rsa = process_rsa_key(world, model, subject, policy)))
 		{
 			pkey = EVP_PKEY_new();
 			EVP_PKEY_assign_RSA(pkey, rsa);
@@ -129,23 +160,42 @@ process_key(myd *myd, librdf_world *world, librdf_model *model, librdf_node *sub
 }	
 
 static RSA *
-process_rsa_key(librdf_world *world, librdf_model *model, librdf_node *subject)
+process_rsa_key(librdf_world *world, librdf_model *model, librdf_node *subject, const myd_policy *policy)
 {
 	BIGNUM *modulus, *exponent;
 	RSA *rsa;
+	unsigned char *p;
 
 	modulus = NULL;
 	exponent = NULL;
 	if(!subject_isa(world, model, subject, "http://www.w3.org/ns/auth/cert#RSAPublicKey"))
 	{
+		if(policy->debug)
+		{
+			p = librdf_node_to_string(subject);
+			fprintf(stderr, "libmyD: key node %s is not a cert:RSAPublicKey\n", (char *) p);
+			free(p);
+		}
 		return NULL;
 	}
 	if(!(modulus = bn_from_property(world, model, subject, "http://www.w3.org/ns/auth/cert#modulus")))
 	{
+		if(policy->debug)
+		{
+			p = librdf_node_to_string(subject);
+			fprintf(stderr, "libmyD: failed to obtain a multi-precision integer from cert:modulus property of %s\n", (char *) p);
+			free(p);
+		}
 		return NULL;
 	}
 	if(!(exponent = bn_from_property(world, model, subject, "http://www.w3.org/ns/auth/cert#exponent")))
 	{
+		if(policy->debug)
+		{
+			p = librdf_node_to_string(subject);
+			fprintf(stderr, "libmyD: failed to obtain a multi-precision integer from cert:exponent property of %s\n", (char *) p);
+			free(p);
+		}
 		BN_free(modulus);
 		return NULL;
 	}

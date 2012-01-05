@@ -25,7 +25,7 @@
 
 typedef struct myd_s myd;
 typedef struct myd_uri_s myd_uri;
-typedef void *myd_policy; /* Placeholder */
+typedef struct myd_policy_s myd_policy;
 
 struct myd_s
 {
@@ -47,12 +47,18 @@ struct myd_uri_s
 	int valid:1;
 };
 
+struct myd_policy_s
+{
+	/* Print debugging information about certificate processing */
+	int debug:1;
+};
+
 # if defined(__cplusplus)
 extern "C" {
 # endif
 
-	myd *myd_from_pem(const char *pem, size_t len, myd_policy *reserved);
-	myd *myd_from_pem_bio(BIO *bio, myd_policy *reserved);
+	myd *myd_from_pem(const char *pem, size_t len, const myd_policy *policy);
+	myd *myd_from_pem_bio(BIO *bio, const myd_policy *policy);
 	void myd_free(myd *myd);
 
 # if defined(__cplusplus)
