@@ -25,7 +25,7 @@ static RSA *process_rsa_key(librdf_world *world, librdf_model *model, librdf_nod
 static int keys_match(EVP_PKEY *a, EVP_PKEY *b);
 static BIGNUM *bn_from_node(librdf_node *node);
 static int subject_isa(librdf_world *world, librdf_model *model, librdf_node *subject, const char *classuri);
-static BIGNUM *bn_from_property(librdf_world *world, librdf_model *model, librdf_node *subject, const char *predicate);
+static BIGNUM *bn_from_property(librdf_world *world, librdf_model *model, librdf_node *subject, const char *predicate, const myd_policy *policy);
 
 /* Internal: Walk the list of URIs in a myD structure and retrieve structured data
  * about them.
@@ -178,24 +178,12 @@ process_rsa_key(librdf_world *world, librdf_model *model, librdf_node *subject, 
 		}
 		return NULL;
 	}
-	if(!(modulus = bn_from_property(world, model, subject, "http://www.w3.org/ns/auth/cert#modulus")))
+	if(!(modulus = bn_from_property(world, model, subject, "http://www.w3.org/ns/auth/cert#modulus", policy)))
 	{
-		if(policy->debug)
-		{
-			p = librdf_node_to_string(subject);
-			fprintf(stderr, "libmyD: failed to obtain a multi-precision integer from cert:modulus property of %s\n", (char *) p);
-			free(p);
-		}
 		return NULL;
 	}
-	if(!(exponent = bn_from_property(world, model, subject, "http://www.w3.org/ns/auth/cert#exponent")))
+	if(!(exponent = bn_from_property(world, model, subject, "http://www.w3.org/ns/auth/cert#exponent", policy)))
 	{
-		if(policy->debug)
-		{
-			p = librdf_node_to_string(subject);
-			fprintf(stderr, "libmyD: failed to obtain a multi-precision integer from cert:exponent property of %s\n", (char *) p);
-			free(p);
-		}
 		BN_free(modulus);
 		return NULL;
 	}
@@ -264,17 +252,27 @@ keys_match(EVP_PKEY *a, EVP_PKEY *b)
  * its value as a BIGNUM.
  */
 static BIGNUM *
-bn_from_property(librdf_world *world, librdf_model *model, librdf_node *subject, const char *predicateuri)
+bn_from_property(librdf_world *world, librdf_model *model, librdf_node *subject, const char *predicateuri, const myd_policy *policy)
 {
 	BIGNUM *bn;
 	librdf_node *predicate, *obj;
 	librdf_statement *query, *st;
 	librdf_stream *stream;
+	unsigned char *p;
 
 	bn = NULL;
 	predicate = librdf_new_node_from_uri_string(world, (const unsigned char *) predicateuri);
 	query = librdf_new_statement_from_nodes(world, librdf_new_node_from_node(subject), predicate, NULL);
 	stream = librdf_model_find_statements(model, query);
+	if(policy->debug && librdf_stream_end(stream))
+	{
+		p = librdf_node_to_string(subject);
+		fprintf(stderr, "libmyD: instance %s has no property <%s>\n", (char *) p, predicateuri);
+		free(p);
+		librdf_free_stream(stream);
+		librdf_free_statement(query);
+		return NULL;
+	}
 	while(!librdf_stream_end(stream))
 	{
 		st = librdf_stream_get_object(stream);
@@ -283,8 +281,23 @@ bn_from_property(librdf_world *world, librdf_model *model, librdf_node *subject,
 		{
 			break;
 		}
+		if(policy->debug)
+		{
+			p = librdf_node_to_string(obj);
+			fprintf(stderr, "libmyD: failed to parse %s ", (char *) p);
+			free(p);
+			p = librdf_node_to_string(subject);
+			fprintf(stderr, "(property <%s> of %s) as a multi-precision integer\n", predicateuri, (char *) p);
+			free(p);
+		}
 		librdf_stream_next(stream);
 	}
+	if(policy->debug && !bn)
+	{
+		p = librdf_node_to_string(subject);
+		fprintf(stderr, "libmyD: failed to obtain multi-precision integer from property <%s> of %s\n", predicateuri, (char *) p);
+		free(p);
+	}		
 	librdf_free_stream(stream);
 	librdf_free_statement(query);
 	return bn;
@@ -313,7 +326,14 @@ bn_from_node(librdf_node *node)
 		BN_hex2bn(&num, (const char *) librdf_node_get_literal_value(node));
 		return num;
 	}
-	if(!strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#integer"))
+	if(!strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#integer") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#nonNegativeInteger") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#int") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#unsignedLong") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#unsignedInt") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#positiveInteger") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#long") ||
+	   !strcmp((const char *) librdf_uri_to_string(dt), "http://www.w3.org/2001/XMLSchema#short"))
 	{
 		BN_dec2bn(&num, (const char *) librdf_node_get_literal_value(node));
 		return num;
