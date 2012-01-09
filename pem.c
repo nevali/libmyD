@@ -45,6 +45,7 @@ myd_from_pem(const char *pem, size_t len, const myd_policy *policy)
 myd *
 myd_from_pem_bio(BIO *bio, const myd_policy *policy)
 {
+	X509 *x509;
 	myd *myd;
 	GENERAL_NAMES *names;
 	GENERAL_NAME *name;
@@ -60,18 +61,15 @@ myd_from_pem_bio(BIO *bio, const myd_policy *policy)
 	{
 		return NULL;
 	}
-	if(!(myd->x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL)))
+	if(!(x509 = PEM_read_bio_X509(bio, NULL, NULL, NULL)))
 	{
-		if(policy->debug)
-		{
-			fprintf(stderr, "libmyD: failed to parse PEM-formatted X.509 certificate\n");
-		}
+		myd__debug(policy, 0, "Failed to parse PEM-formatted X.509 certificate");
 		myd_free(myd);
 		return NULL;
 	}
-	myd->key = X509_get_pubkey(myd->x509);
+	myd__assign_x509(myd, x509);
 	/* Extract the subjectAltName entries and create URI structures for each */
-	names = X509_get_ext_d2i(myd->x509, NID_subject_alt_name, 0, 0);
+	names = X509_get_ext_d2i(x509, NID_subject_alt_name, 0, 0);
 	if(names)
 	{
 		count = sk_GENERAL_NAME_num(names);
@@ -84,20 +82,14 @@ myd_from_pem_bio(BIO *bio, const myd_policy *policy)
 				myd__add_uri(myd, (const char *) utf8);
 			}
 		}
-		if(policy->debug)
+		if(!myd->nuris)
 		{
-			if(!myd->nuris)
-			{
-				fprintf(stderr, "libmyD: none of the certificate's subjectAltName entries are URIs\n");
-			}
+			myd__debug(policy, 1, "None of the certificate's subjectAltName entries are URIs");
 		}
 	}
 	else
 	{
-		if(policy->debug)
-		{
-			fprintf(stderr, "libmyD: certificate does not contain any subjectAltName extension\n");
-		}
+		myd__debug(policy, 1, "Certificate does not contain any subjectAltName extension");
 	}
 	myd__traverse_uris(myd, policy);
 	return myd;

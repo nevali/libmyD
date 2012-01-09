@@ -20,8 +20,30 @@
 
 #include "p_libmyD.h"
 
-myd_policy myd__default_policy =
+int
+myd__debug(const myd_policy *policy, int level, const char *fmt, ...)
 {
-	/* debug */ 0,
-	/* debug_handler */ NULL,
-};
+	va_list ap;
+
+	va_start(ap, fmt);
+	if(policy && policy->debug_handler)
+	{
+		return policy->debug_handler(policy, level, fmt, ap);
+	}
+	return myd__debug_handler(policy, level, fmt, ap);
+}
+
+int
+myd__debug_handler(const myd_policy *policy, int level, const char *fmt, va_list ap)
+{
+	int r;
+
+	if(!policy || policy->debug == 0 || policy->debug < level)
+	{
+		return 0;
+	}
+	r = fprintf(stderr, "libmyD(%02d): ", level);
+	r += vfprintf(stderr, fmt, ap);
+	r += (fputc('\n', stderr) ? 1 : 0);
+	return r;
+}

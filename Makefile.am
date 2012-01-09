@@ -3,7 +3,7 @@ SUBDIRS = include
 lib_LTLIBRARIES = libmyD.la
 
 libmyD_la_SOURCES = p_libmyD.h \
-	pem.c structure.c traverse.c policy.c
+	pem.c structure.c traverse.c policy.c debug.c
 
 libmyD_la_LDFLAGS = -avoid-version
 

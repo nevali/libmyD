@@ -28,9 +28,9 @@
 
 #include "myD/myD.h"
 
-#if !defined(isatty) && defined(_isatty)
+#if !defined(HAVE_ISATTY) && defined(HAVE__ISATTY)
 # define isatty(fd)                     _isatty(fd)
-#elif !defined(isatty)
+#elif !defined(HAVE_ISATTY)
 # define isatty(fd)                     0
 #endif
 
@@ -40,8 +40,12 @@ int
 main(int argc, char **argv)
 {
 	BIO *bin;
+	X509 *x509;
 	myd *myd;
-	size_t c;
+	myd_key *key;
+	myd_uriflags flags;
+	const char *uri;
+	size_t c, nuris;
 
 	(void) argc;
 	(void) argv;
@@ -59,7 +63,7 @@ main(int argc, char **argv)
 	setvbuf(stdin, NULL, _IONBF, 0);
 	BIO_set_fp(bin, stdin, BIO_NOCLOSE);
 
-	policy.debug = 1;
+	policy.debug = 65535;
 
 	if(!(myd = myd_from_pem_bio(bin, &policy)))
 	{
@@ -67,34 +71,39 @@ main(int argc, char **argv)
 		ERR_print_errors_fp(stderr);
 		return 1;
 	}
-	if(myd->x509)
+	x509 = myd_get_x509(myd);
+	if(x509)
 	{
 		printf("Parsed an X.509 certificate\n");
 		printf("Certificate issuer DN:\n");
-		X509_NAME_print_ex_fp(stdout, myd->x509->cert_info->issuer, 4, XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
+		X509_NAME_print_ex_fp(stdout, x509->cert_info->issuer, 4, XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
 		printf("\nCertificate subject DN:\n");
-		X509_NAME_print_ex_fp(stdout, myd->x509->cert_info->subject, 4, XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
+		X509_NAME_print_ex_fp(stdout, x509->cert_info->subject, 4, XN_FLAG_ONELINE & ~ASN1_STRFLGS_ESC_MSB);
 		fputc('\n', stdout);
 	}
-	if(myd->key)
+	key = myd_get_key(myd);
+	if(key)
 	{
-		switch(myd->key->type)
+		switch(key->type)
 		{
-		case EVP_PKEY_RSA:
-			RSA_print_fp(stdout, myd->key->pkey.rsa, 0);
+		case MYD_KT_RSA:
+			RSA_print_fp(stdout, key->k.rsa, 0);
 			break;
 		default:
-			printf("Unsupported public key type %d\n", myd->key->type);
+			printf("Unsupported public key type %d\n", key->type);
 		}
 	}
-	for(c = 0; c < myd->nuris; c++)
+	nuris = myd_get_uri_count(myd);
+	for(c = 0; c < nuris; c++)
 	{
 		printf("Embedded URI #%d:\n", (int) c + 1);
-		printf("    %s\n", myd->uris[c].uri);
-		printf("      [%c] Parsed\n", myd->uris[c].parsed ? '+' : ' ');
-		printf("      [%c] Found key statement\n", myd->uris[c].found_key ? '+' : ' ');
-		printf("      [%c] Matched key to certificate\n", myd->uris[c].matched ? '+' : ' ');
-		printf("      [%c] Valid according to policy\n", myd->uris[c].valid ? '+' : ' ');
+		uri = myd_get_uri(myd, c);
+		flags = myd_get_uri_flags(myd, c);
+		printf("    %s\n", uri);
+		printf("      [%c] Parsed\n", (flags & MYD_URI_PARSED) ? '+' : ' ');
+		printf("      [%c] Found key statement\n", (flags & MYD_URI_FOUND_KEY) ? '+' : ' ');
+		printf("      [%c] Matched key to certificate\n", (flags & MYD_URI_MATCHED) ? '+' : ' ');
+		printf("      [%c] Valid according to policy\n", (flags & MYD_URI_VALID) ? '+' : ' ');
 	}
 	myd_free(myd);
 	return 0;

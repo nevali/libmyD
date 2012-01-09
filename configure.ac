@@ -3,7 +3,7 @@ AM_INIT_AUTOMAKE([foreign])
 AM_MAINTAINER_MODE
 AC_PROG_LIBTOOL
 
-developer_CPPFLAGS='-W -Wall -g'
+developer_CPPFLAGS='-W -Wall -Wno-deprecated-declarations -g'
 
 if test x"$VERSION" = x"develop" ; then
    AC_MSG_RESULT([enabling developer-mode CPPFLAGS: $developer_CPPFLAGS])
